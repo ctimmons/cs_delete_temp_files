@@ -20,26 +20,33 @@ namespace DeleteTempFiles
 
     private static void RecursivelyDeleteTempFilesAndFolders(DirectoryInfo di)
     {
-      foreach (var fsi in di.EnumerateFileSystemInfos())
+      try
       {
-        if (fsi is DirectoryInfo)
-          RecursivelyDeleteTempFilesAndFolders(fsi as DirectoryInfo);
-        
-        if (CanDelete(fsi))
+        foreach (var fsi in di.EnumerateFileSystemInfos())
         {
-          try
-          {
-            fsi.Delete();
-          }
-          catch
-          {
-            /* The file or folder can't be deleted.
+          if (fsi is DirectoryInfo)
+            RecursivelyDeleteTempFilesAndFolders(fsi as DirectoryInfo);
 
-               Assume some other process is using this item.
-               Don't try to figure out why it can't be deleted or try to force
-               the deletion.  It's safest to just skip it. */
+          if (CanDelete(fsi))
+          {
+            try
+            {
+              fsi.Delete();
+            }
+            catch
+            {
+              /* The file or folder can't be deleted.
+
+                 Assume some other process is using this item.
+                 Don't try to figure out why it can't be deleted or try to force
+                 the deletion.  It's safest to just skip it. */
+            }
           }
         }
+      }
+      catch
+      {
+        /* The folder can't be enumerated. */
       }
     }
 

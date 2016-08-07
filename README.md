@@ -10,5 +10,6 @@ As a software developer, I tend to accumulate a lot of flotsam in my temp folder
 
 The app assumes any file or folder that was created, accessed, or written to before the computer was booted up is an orphan, and can safely be deleted.  The app recursively walks the current user's temp folder depth first.  As the recursion unwinds, candidate files are deleted, as well as their parent folders (if the folder is empty).  If the file or folder can't be deleted, it is skipped.
 
+Run the app as an administrator.
 
 
