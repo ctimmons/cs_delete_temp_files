@@ -11,24 +11,17 @@ namespace DeleteTempFiles
 
   public class Program
   {
-    private static readonly DateTime _bootDateTime = GetBootDateTime();
-
     public static void Main(String[] args)
     {
-      var shouldLogErrors = args.Any(arg => arg.Trim().ToLower() == "/log");
-      var appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeleteTempFiles");
-      var logFilename = Path.Combine(appDataFolder, $"{DateTime.Today.ToString("yyyy-MM-dd")} - Log.txt");
+      var baseAppDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+      var appDataFolder = Path.Combine(baseAppDataFolder, "DeleteTempFiles");
+      var log = new Log(appDataFolder);
 
-      if (shouldLogErrors)
-      {
-        Directory.CreateDirectory(appDataFolder);
-        File.WriteAllText(logFilename, "");
-      }
+      log.Write("INFO", "START RUN");
 
-      Action<String, String, String> logErrorMessage =
-        (type, name, message) => { if (shouldLogErrors) File.AppendAllText(logFilename, $"{type}: {name}: {message}\n"); };
+      RecursivelyDeleteTempFilesAndFolders(new DirectoryInfo(Path.GetTempPath()), log.Write);
 
-      RecursivelyDeleteTempFilesAndFolders(new DirectoryInfo(Path.GetTempPath()), logErrorMessage);
+      log.Write("INFO", "END RUN");
     }
 
     private static void RecursivelyDeleteTempFilesAndFolders(DirectoryInfo di, Action<String, String, String> logErrorMessage)
@@ -53,7 +46,12 @@ namespace DeleteTempFiles
                  Assume some other process is using this item.
                  Don't try to figure out why it can't be deleted or try to force
                  the deletion.  It's safest to just skip it. */
-              logErrorMessage("File", fsi.FullName, ex.Message);
+
+              var type =
+                (fsi is DirectoryInfo)
+                ? "FOLDER"
+                : "FILE";
+              logErrorMessage(type, fsi.FullName, ex.Message);
             }
           }
         }
@@ -61,24 +59,25 @@ namespace DeleteTempFiles
       catch (Exception ex)
       {
         /* The folder can't be enumerated. */
-        logErrorMessage("Directory", di.FullName, ex.Message);
+        logErrorMessage("FOLDER", di.FullName, ex.Message);
       }
     }
 
-    private static Boolean CanDelete(FileSystemInfo fsi)
-    {
-      return
-        (fsi.CreationTime   < _bootDateTime) &&
-        (fsi.LastAccessTime < _bootDateTime) &&
-        (fsi.LastWriteTime  < _bootDateTime) &&
+    private static readonly DateTime _bootDateTime = GetBootDateTime();
 
-        /* The LINQ Any() operator has "immediate execution" behavior.
+    private static Boolean CanDelete(FileSystemInfo fsi) =>
+      (fsi.CreationTime   < _bootDateTime) &&
+      (fsi.LastAccessTime < _bootDateTime) &&
+      (fsi.LastWriteTime  < _bootDateTime) &&
+
+      /* The LINQ Any() operator has "immediate execution" behavior.
+         Therefore the IEnumerable<FileSystemInfo> returned by EnumerateFileSystemInfos()
+         will be immediately reified.
         
-           https://docs.microsoft.com/en-us/dotnet/csharp/programming-guide/concepts/linq/classification-of-standard-query-operators-by-manner-of-execution#classification-table
-        */
+         https://docs.microsoft.com/en-us/dotnet/csharp/programming-guide/concepts/linq/classification-of-standard-query-operators-by-manner-of-execution#classification-table
+      */
 
-        ((fsi is DirectoryInfo) ? !(fsi as DirectoryInfo).EnumerateFileSystemInfos().Any() : true);
-    }
+      ((fsi is DirectoryInfo) ? !(fsi as DirectoryInfo).EnumerateFileSystemInfos().Any() : true);
 
     private static String GetWmiPropertyValueAsString(String queryString, String propertyName)
     {
@@ -111,9 +110,37 @@ namespace DeleteTempFiles
 
       */
 
-    public static DateTime GetBootDateTime()
+    public static DateTime GetBootDateTime() => GetWmiPropertyValueAsDateTime("SELECT * FROM Win32_OperatingSystem WHERE Primary='true'", "LastBootUpTime");
+  }
+
+  internal class Log
+  {
+    private readonly String _logFilename;
+
+    private Log()
+      : base()
     {
-      return GetWmiPropertyValueAsDateTime("SELECT * FROM Win32_OperatingSystem WHERE Primary='true'", "LastBootUpTime");
+    }
+
+    public Log(String folder)
+      : this()
+    {
+      Directory.CreateDirectory(folder);
+      this._logFilename = Path.Combine(folder, $"{DateTime.Today:yyyy-MM-dd} - Log.txt");
+    }
+
+    public void Write(String type, String message) => this.Write(type, "", message);
+
+    public void Write(String type, String fileOrFolderName, String message)
+    {
+      /* Timestamps are represented in the Round Trip Format Specifier
+          (https://docs.microsoft.com/en-us/dotnet/standard/base-types/standard-date-and-time-format-strings#Roundtrip). */
+      var timestamp = DateTime.Now.ToUniversalTime().ToString("o");
+
+      File.AppendAllText(this._logFilename,
+        String.IsNullOrWhiteSpace(fileOrFolderName)
+        ? $"{timestamp}\t[{type}]\t{message}\n"
+        : $"{timestamp}\t[{type}]\t{fileOrFolderName}\t{message}\n");
     }
   }
 }
